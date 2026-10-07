@@ -1,17 +1,17 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from modules.username.github_check import GithubCheck
+from modules.username.github_check import GitHubCheck
 
 @pytest.mark.asyncio
 async def test_github_user_found():
-    module = GithubCheck()
-    
+    mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"public_repos": 12, "html_url": "https://github.com/octocat"}
+    mock_client.get = AsyncMock(return_value=mock_response)
 
-    module.client = MagicMock()
-    module.client.get = AsyncMock(return_value=mock_response)
+    # Passa o mock_client no construtor
+    module = GitHubCheck(http_client=mock_client)
 
     result = await module.run("octocat")
 
@@ -21,13 +21,13 @@ async def test_github_user_found():
 
 @pytest.mark.asyncio
 async def test_github_user_not_found():
-    module = GithubCheck()
-
+    mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 404
+    mock_client.get = AsyncMock(return_value=mock_response)
 
-    module.client = MagicMock()
-    module.client.get = AsyncMock(return_value=mock_response)
+    # Passa o mock_client no construtor
+    module = GitHubCheck(http_client=mock_client)
 
     result = await module.run("non_existent_user_12345")
 
