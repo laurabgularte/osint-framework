@@ -1,24 +1,31 @@
 import asyncio
 from typing import List, Optional
-from osint_engine.loader import load_plugins
+from osint_engine.loader import ModuleLoader
 from osint_engine.models import ModuleResult
-from osint_engine.utils.http_client import create_async_client
+from osint_engine.config import config
 
 class OSINTEngine:
     def __init__(self):
-        self.plugin_classes = load_plugins("modules")
+        self.loader = ModuleLoader()
 
     async def run_scan(self, target: str, category: Optional[str] = None) -> List[ModuleResult]:
-        async with create_async_client() as client:
-            tasks = []
-            for cls in self.plugin_classes:
-                instance = cls(http_client=client)
-                if category and instance.category.lower() != category.lower():
-                    continue
-                tasks.append(instance.run(target))
+        modules = self.loader.get_modules(category=category)
+        semaphore = asyncio.Semaphore(config.MAX_CONCURRENCY)
 
-            if not tasks:
-                return []
+        async def worker(module_cls):
+            async with semaphore:
+                try:
+                    instance = module_cls()
+                    return await instance.run(target)
+                except Exception as e:
+                    return ModuleResult(
+                        module_name=getattr(module_cls, "name", "Unknown"),
+                        category=getattr(module_cls, "category", "general"),
+                        target=target,
+                        status="ERROR",
+                        details=f"Falha de execução: {str(e)}"
+                    )
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            return [res for res in results if isinstance(res, ModuleResult)]
+        tasks = [worker(mod) for mod in modules]
+        results = await asyncio.gather(*tasks)
+        return list(results)
